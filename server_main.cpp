@@ -7,6 +7,15 @@
 
 using namespace std;
 
+bool recv_all(SOCKET s, char* buffer, int length) {
+    int total_received = 0;
+    while (total_received < length) {
+        int bytes = recv(s, buffer + total_received, length - total_received, 0);
+        if (bytes <= 0) return false;
+        total_received += bytes;
+    }
+    return true;
+}
 
 void process_task( int n, int num_threads, const vector<int>& A,
                    const vector<int>& B, vector<int>& C,
@@ -47,7 +56,7 @@ void handle_client( SOCKET client_socket )
     while ( true )
     {
         MessageHeader header;
-        int bytes = recv( client_socket, ( char* )&header, sizeof( header ), 0 );
+        int bytes = recv_all( client_socket, ( char* )&header, sizeof( header ) );
         if ( bytes <= 0 ) break;
 
         header.command = ntohl( header.command );
@@ -67,12 +76,12 @@ void handle_client( SOCKET client_socket )
         }
         else if ( header.command == CMD_SEND_DATA_A )
             {
-            recv( client_socket, ( char* )matrix_A.data(), header.data_length, 0 );
+            recv_all( client_socket, ( char* )matrix_A.data(), header.data_length );
             cout << "Matrix A received" << endl;
         }
         else if ( header.command == CMD_SEND_DATA_B )
             {
-            recv( client_socket, ( char* )matrix_B.data(), header.data_length, 0 );
+            recv_all( client_socket, ( char* )matrix_B.data(), header.data_length );
             cout << "Matrix B received" << endl;
         }
         else if ( header.command == CMD_START_TASK )

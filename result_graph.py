@@ -6,7 +6,7 @@ output_dir = 'pngresults'
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
-df = pd.read_csv('results.csv')
+df = pd.read_csv('cmake-build-debug/results.csv')
 
 sizes = df['Size'].unique()
 
