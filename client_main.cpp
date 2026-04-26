@@ -69,25 +69,40 @@ void send_msg( SOCKET s, uint32_t cmd, void* data = nullptr, uint32_t len = 0 )
 
 long long run_remote_benchmark( int n, int threads, const vector<int>& A, const vector<int>& B, vector<int>& C )
 {
-    SOCKET s = socket( AF_INET, SOCK_STREAM, 0 );
     sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons( 8080 );
     addr.sin_addr.s_addr = inet_addr( "127.0.0.1" );
 
-    if ( connect( s, ( sockaddr* )&addr, sizeof( addr ) ) == SOCKET_ERROR )
-    {
-        cerr << "Connection failed for size " << n << endl;
-        return -1;
+    SOCKET s = INVALID_SOCKET;
+    bool waiting = false;
+
+    while ( true ) {
+        s = socket( AF_INET, SOCK_STREAM, 0 );
+        if ( connect( s, ( sockaddr* )&addr, sizeof( addr ) ) != SOCKET_ERROR ) {
+            if ( waiting ) cout << "Connected to server!" << endl;
+            break;
+        }
+        closesocket( s );
+        if ( !waiting ) {
+            cout << "Server is offline. Waiting..." << endl;
+            waiting = true;
+        }
+        Sleep( 1000 );
     }
 
     ConfigPayload config;
     config.matrix_size = htonl( n );
     config.num_threads = htonl( threads );
 
+    vector<int> net_A = A;
+    vector<int> net_B = B;
+    for ( int& val : net_A ) val = htonl( val );
+    for ( int& val : net_B ) val = htonl( val );
+
     send_msg( s, CMD_SEND_CONFIG, &config, sizeof( config ) );
-    send_msg( s, CMD_SEND_DATA_A, (void*)A.data(), A.size() * sizeof( int ) );
-    send_msg( s, CMD_SEND_DATA_B, (void*)B.data(), B.size() * sizeof( int ) );
+    send_msg( s, CMD_SEND_DATA_A, (void*)net_A.data(), net_A.size() * sizeof( int ) );
+    send_msg( s, CMD_SEND_DATA_B, (void*)net_B.data(), net_B.size() * sizeof( int ) );
 
     auto start_time = chrono::high_resolution_clock::now();
 
@@ -97,7 +112,7 @@ long long run_remote_benchmark( int n, int threads, const vector<int>& A, const 
     {
         send_msg( s, CMD_GET_STATUS );
         uint32_t status;
-        recv( s, ( char* )&status, sizeof( status ), 0 );
+        recv_all( s, ( char* )&status, sizeof( status ) );
         if ( ntohl( status ) == STATUS_DONE ) break;
         Sleep( 5 );
     }
@@ -106,6 +121,8 @@ long long run_remote_benchmark( int n, int threads, const vector<int>& A, const 
 
     send_msg( s, CMD_GET_RESULT );
     recv_all( s, ( char* )C.data(), C.size() * sizeof( int ) );
+
+    for ( int& val : C ) val = ntohl( val );
 
     closesocket( s );
 

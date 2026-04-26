@@ -19,6 +19,18 @@ bool recv_all(SOCKET s, char* buffer, int length)
     return true;
 }
 
+bool send_all(SOCKET s, const char* buffer, int length)
+{
+    int total_sent = 0;
+    while (total_sent < length)
+    {
+        int bytes = send(s, buffer + total_sent, length - total_sent, 0);
+        if (bytes <= 0) return false;
+        total_sent += bytes;
+    }
+    return true;
+}
+
 void process_task( int n, int num_threads, const vector<int>& A,
                    const vector<int>& B, vector<int>& C,
                    atomic<StatusType>& status )
@@ -51,22 +63,24 @@ void handle_client( SOCKET client_socket )
 {
     cout << "[Client Thread] Handling new connection" << endl;
 
-    ConfigPayload config = { 0, 0 };
+    ConfigPayload config;
+    config.matrix_size = 0;
+    config.num_threads = 0;
+
     vector<int> matrix_A, matrix_B, matrix_C;
     atomic<StatusType> current_status{ STATUS_OK };
 
-    while ( true )
+  while ( true )
     {
         MessageHeader header;
-        int bytes = recv_all( client_socket, ( char* )&header, sizeof( header ) );
-        if ( bytes <= 0 ) break;
+        if ( !recv_all( client_socket, ( char* )&header, sizeof( header ) ) ) break;
 
         header.command = ntohl( header.command );
         header.data_length = ntohl( header.data_length );
 
         if ( header.command == CMD_SEND_CONFIG )
         {
-            recv( client_socket, ( char* )&config, sizeof( config ), 0 );
+            recv_all( client_socket, ( char* )&config, sizeof( config ) );
             config.matrix_size = ntohl( config.matrix_size );
             config.num_threads = ntohl( config.num_threads );
 
@@ -77,14 +91,16 @@ void handle_client( SOCKET client_socket )
             cout << "Config received: " << config.matrix_size << "x" << config.matrix_size << endl;
         }
         else if ( header.command == CMD_SEND_DATA_A )
-            {
+        {
             recv_all( client_socket, ( char* )matrix_A.data(), header.data_length );
-            cout << "Matrix A received" << endl;
+            for ( int& val : matrix_A ) val = ntohl( val );
+            cout << "Matrix A received and converted" << endl;
         }
         else if ( header.command == CMD_SEND_DATA_B )
         {
             recv_all( client_socket, ( char* )matrix_B.data(), header.data_length );
-            cout << "Matrix B received" << endl;
+            for ( int& val : matrix_B ) val = ntohl( val );
+            cout << "Matrix B received and converted" << endl;
         }
         else if ( header.command == CMD_START_TASK )
         {
@@ -95,13 +111,16 @@ void handle_client( SOCKET client_socket )
         else if ( header.command == CMD_GET_STATUS )
         {
             uint32_t s = htonl( ( uint32_t )current_status.load() );
-            send( client_socket, ( char* )&s, sizeof( s ), 0 );
+            send_all( client_socket, ( char* )&s, sizeof( s ) );
         }
         else if ( header.command == CMD_GET_RESULT )
         {
             if ( current_status == STATUS_DONE )
             {
-                send( client_socket, ( char* )matrix_C.data(), matrix_C.size() * sizeof( int ), 0 );
+                vector<int> net_C = matrix_C;
+                for ( int& val : net_C ) val = htonl( val );
+
+                send_all( client_socket, ( char* )net_C.data(), net_C.size() * sizeof( int ) );
                 cout << "Result sent to client" << endl;
             }
         }
@@ -114,16 +133,22 @@ int main() {
     WSAStartup( MAKEWORD( 2, 2 ), &wsa );
 
     SOCKET server_socket = socket( AF_INET, SOCK_STREAM, 0 );
-    sockaddr_in addr = { AF_INET, htons( 8080 ), INADDR_ANY };
+
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons( 8080 );
+    addr.sin_addr.s_addr = INADDR_ANY;
 
     bind( server_socket, ( sockaddr* )&addr, sizeof( addr ) );
     listen( server_socket, SOMAXCONN );
 
     cout << "Server running on port 8080..." << endl;
 
-    while ( true ) {
+    while ( true )
+    {
         SOCKET client = accept( server_socket, NULL, NULL );
-        if ( client != INVALID_SOCKET ) {
+        if ( client != INVALID_SOCKET )
+        {
             thread( handle_client, client ).detach();
         }
     }
