@@ -7,9 +7,11 @@
 
 using namespace std;
 
-bool recv_all(SOCKET s, char* buffer, int length) {
+bool recv_all(SOCKET s, char* buffer, int length)
+{
     int total_received = 0;
-    while (total_received < length) {
+    while (total_received < length)
+    {
         int bytes = recv(s, buffer + total_received, length - total_received, 0);
         if (bytes <= 0) return false;
         total_received += bytes;
@@ -80,7 +82,7 @@ void handle_client( SOCKET client_socket )
             cout << "Matrix A received" << endl;
         }
         else if ( header.command == CMD_SEND_DATA_B )
-            {
+        {
             recv_all( client_socket, ( char* )matrix_B.data(), header.data_length );
             cout << "Matrix B received" << endl;
         }
@@ -91,7 +93,7 @@ void handle_client( SOCKET client_socket )
             cout << "Processing started..." << endl;
         }
         else if ( header.command == CMD_GET_STATUS )
-            {
+        {
             uint32_t s = htonl( ( uint32_t )current_status.load() );
             send( client_socket, ( char* )&s, sizeof( s ), 0 );
         }

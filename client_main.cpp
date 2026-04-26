@@ -9,18 +9,20 @@
 
 using namespace std;
 
-// --- Функції з 1-ї лабораторної для CSV ---
-void init_csv( const string& filename ) {
+void init_csv( const string& filename )
+{
     ofstream file( filename );
     if ( file.is_open() ) file << "Size,Threads,Time_ms\n";
 }
 
-void append_to_csv( const string& filename, int n, int threads, double time_ms ) {
+void append_to_csv( const string& filename, int n, int threads, double time_ms )
+{
     ofstream file( filename, ios::app );
     if ( file.is_open() ) file << n << "," << threads << "," << fixed << setprecision( 6 ) << time_ms << "\n";
 }
 
-void print_result( const string& method, int n, long long time_us, double speedup = 1.0 ) {
+void print_result( const string& method, int n, long long time_us, double speedup = 1.0 )
+{
     cout << left << setw( 18 ) << method
          << right << setw( 12 ) << to_string(n) + "x" + to_string(n)
          << setw( 15 ) << time_us
@@ -28,11 +30,13 @@ void print_result( const string& method, int n, long long time_us, double speedu
          << setw( 15 ) << fixed << setprecision( 2 ) << speedup << "x" << endl;
 }
 
-// --- Мережева логіка ---
 
-bool send_all(SOCKET s, const char* buffer, int length) {
+
+bool send_all(SOCKET s, const char* buffer, int length)
+{
     int total_sent = 0;
-    while (total_sent < length) {
+    while (total_sent < length)
+    {
         int bytes = send(s, buffer + total_sent, length - total_sent, 0);
         if (bytes <= 0) return false;
         total_sent += bytes;
@@ -40,9 +44,11 @@ bool send_all(SOCKET s, const char* buffer, int length) {
     return true;
 }
 
-bool recv_all(SOCKET s, char* buffer, int length) {
+bool recv_all(SOCKET s, char* buffer, int length)
+{
     int total_received = 0;
-    while (total_received < length) {
+    while (total_received < length)
+    {
         int bytes = recv(s, buffer + total_received, length - total_received, 0);
         if (bytes <= 0) return false;
         total_received += bytes;
@@ -52,7 +58,8 @@ bool recv_all(SOCKET s, char* buffer, int length) {
 
 
 
-void send_msg( SOCKET s, uint32_t cmd, void* data = nullptr, uint32_t len = 0 ) {
+void send_msg( SOCKET s, uint32_t cmd, void* data = nullptr, uint32_t len = 0 )
+{
     MessageHeader header;
     header.command = htonl( cmd );
     header.data_length = htonl( len );
@@ -60,14 +67,16 @@ void send_msg( SOCKET s, uint32_t cmd, void* data = nullptr, uint32_t len = 0 ) 
     if ( len > 0 && data != nullptr ) send_all( s, ( const char* )data, len );
 }
 
-long long run_remote_benchmark( int n, int threads, const vector<int>& A, const vector<int>& B, vector<int>& C ) {
+long long run_remote_benchmark( int n, int threads, const vector<int>& A, const vector<int>& B, vector<int>& C )
+{
     SOCKET s = socket( AF_INET, SOCK_STREAM, 0 );
     sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons( 8080 );
     addr.sin_addr.s_addr = inet_addr( "127.0.0.1" );
 
-    if ( connect( s, ( sockaddr* )&addr, sizeof( addr ) ) == SOCKET_ERROR ) {
+    if ( connect( s, ( sockaddr* )&addr, sizeof( addr ) ) == SOCKET_ERROR )
+    {
         cerr << "Connection failed for size " << n << endl;
         return -1;
     }
@@ -76,28 +85,25 @@ long long run_remote_benchmark( int n, int threads, const vector<int>& A, const 
     config.matrix_size = htonl( n );
     config.num_threads = htonl( threads );
 
-    // Відправляємо дані
     send_msg( s, CMD_SEND_CONFIG, &config, sizeof( config ) );
     send_msg( s, CMD_SEND_DATA_A, (void*)A.data(), A.size() * sizeof( int ) );
     send_msg( s, CMD_SEND_DATA_B, (void*)B.data(), B.size() * sizeof( int ) );
 
-    // Починаємо замір часу
     auto start_time = chrono::high_resolution_clock::now();
 
     send_msg( s, CMD_START_TASK );
 
-    // Опитування статусу (polling)
-    while ( true ) {
+    while ( true )
+    {
         send_msg( s, CMD_GET_STATUS );
         uint32_t status;
         recv( s, ( char* )&status, sizeof( status ), 0 );
         if ( ntohl( status ) == STATUS_DONE ) break;
-        Sleep( 5 ); // Короткий сон, щоб не спамити сервер
+        Sleep( 5 );
     }
 
     auto end_time = chrono::high_resolution_clock::now();
 
-    // Отримуємо результат
     send_msg( s, CMD_GET_RESULT );
     recv_all( s, ( char* )C.data(), C.size() * sizeof( int ) );
 
@@ -129,21 +135,23 @@ int main() {
         uniform_int_distribution<> dis( 1, 1000 );
 
         vector<int> matrix_A( n * n ), matrix_B( n * n ), matrix_C( n * n );
-        for ( int i = 0; i < n * n; ++i ) {
+        for ( int i = 0; i < n * n; ++i )
+        {
             matrix_A[i] = dis( gen );
             matrix_B[i] = dis( gen );
         }
 
-        // Послідовне обчислення (1 потік) як еталон
+
         long long time_seq = run_remote_benchmark( n, 1, matrix_A, matrix_B, matrix_C );
-        if(time_seq == -1) break; // Вихід, якщо сервер лежить
+        if(time_seq == -1) break;
 
         append_to_csv( "results.csv", n, 1, time_seq / 1000.0 );
         print_result( "Remote Seq (1)", n, time_seq, 1.0 );
         cout << string( 75, '-' ) << endl;
 
-        // Паралельні обчислення
-        for ( int threads : thread_counts ) {
+
+        for ( int threads : thread_counts )
+        {
             long long time_par = run_remote_benchmark( n, threads, matrix_A, matrix_B, matrix_C );
             append_to_csv( "results.csv", n, threads, time_par / 1000.0 );
 
